@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conector de Grafos - Atividade Avaliativa</title>
+    <style>
+        :root { --primary: #2980b9; --success: #27ae60; --error: #e74c3c; --bg: #f0f4f8; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; min-height: 100vh; }
+        
+        .game-container { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 95%; max-width: 700px; position: relative; }
+        
+        .match-area { display: flex; justify-content: space-between; position: relative; margin: 40px 0; min-height: 300px; }
+        .column { display: flex; flex-direction: column; gap: 20px; z-index: 2; width: 40%; }
+        
+        .node { background: var(--primary); color: white; padding: 12px; border-radius: 8px; cursor: pointer; text-align: center; font-weight: bold; transition: 0.3s; border: 2px solid transparent; }
+        .node:hover { transform: scale(1.03); filter: brightness(1.1); }
+        .node.selected { background: #8e44ad; border-color: #fff; box-shadow: 0 0 15px rgba(142, 68, 173, 0.4); }
+        .node.matched { background: var(--success); cursor: default; pointer-events: none; }
+        
+        canvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; }
+
+        /* Modal Styles */
+        #modalOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 100; }
+        .modal { background: white; padding: 25px; border-radius: 15px; width: 80%; max-width: 400px; transform: scale(0.7); transition: 0.3s; text-align: center; }
+        .modal.show { transform: scale(1); }
+        
+        .report-box { background: #f8f9fa; border: 1px solid #ddd; border-radius: 8px; height: 120px; overflow-y: auto; margin: 15px 0; padding: 10px; text-align: left; font-size: 0.9em; }
+        .report-item { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #eee; }
+        
+        .score-tag { font-size: 2em; font-weight: bold; color: var(--primary); margin: 10px 0; }
+        .btn-modal { background: var(--primary); color: white; border: none; padding: 10px 25px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+
+        footer { margin-top: 50px; width: 100%; max-width: 700px; padding: 25px; border-top: 2px solid #2980b9; color: #2d3436; font-size: 0.95em; text-align: center; background-color: #f8f9fa; border-radius: 0 0 15px 15px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<div class="game-container">
+    <h2 style="color: var(--primary); margin-top: 0;">🕵️ Detetive de Grafos: Missão Conexão</h2>
+    <p>Clique em um <b>Vértice</b> e depois na sua <b>Aresta</b> correspondente!</p>
+
+    <div class="match-area" id="matchArea">
+        <canvas id="canvas"></canvas>
+        <div class="column">
+            <div class="node" data-pair="Cidades" id="v1">Cidades</div>
+            <div class="node" data-pair="Páginas Web" id="v2">Páginas Web</div>
+            <div class="node" data-pair="Lâmpadas" id="v3">Lâmpadas</div>
+            <div class="node" data-pair="Perfis Sociais" id="v4">Perfis Sociais</div>
+            <div class="node" data-pair="GPS" id="v5">Rotas de GPS</div>
+        </div>
+        <div class="column">
+            <div class="node" data-pair="Páginas Web" id="a1">Links (Cliques)</div>
+            <div class="node" data-pair="Perfis Sociais" id="a2">Seguidores</div>
+            <div class="node" data-pair="Cidades" id="a3">Rodovias</div>
+            <div class="node" data-pair="GPS" id="a4">Cálculo de Caminho</div>
+            <div class="node" data-pair="Lâmpadas" id="a5">Fios Elétricos</div>
+        </div>
+    </div>
+</div>
+
+<footer>
+    <p><strong>Material Pedagógico - Profª Adriana Bett Terebinto © 2026</strong></p>
+    <p>São Lourenço do Oeste - SC</p>
+</footer>
+
+<div id="modalOverlay">
+    <div class="modal" id="resultModal">
+        <h2 id="modalTitle">Atividade Finalizada!</h2>
+        <div class="score-tag" id="finalScore">0 / 10</div>
+        <div class="report-box" id="reportContent"></div>
+        <button class="btn-modal" onclick="location.reload()">Tentar Novamente</button>
+    </div>
+</div>
+
+<script>
+    let selectedNode = null;
+    let matches = 0;
+    let tries = 0;
+    let errors = 0;
+    const reportData = [];
+    const totalPairs = 5;
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const matchArea = document.getElementById('matchArea');
+
+    function resizeCanvas() {
+        canvas.width = matchArea.offsetWidth;
+        canvas.height = matchArea.offsetHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    setTimeout(resizeCanvas, 100);
+
+    document.querySelectorAll('.node').forEach(node => {
+        node.addEventListener('click', () => {
+            if (node.classList.contains('matched')) return;
+
+            if (!selectedNode) {
+                selectedNode = node;
+                node.classList.add('selected');
+            } else if (selectedNode === node) {
+                selectedNode.classList.remove('selected');
+                selectedNode = null;
+            } else {
+                const isDifferentCol = selectedNode.parentElement !== node.parentElement;
+                const isMatch = selectedNode.dataset.pair === node.dataset.pair;
+
+                if (isDifferentCol) {
+                    tries++;
+                    if (isMatch) {
+                        node.classList.add('matched');
+                        selectedNode.classList.add('matched');
+                        drawLine(selectedNode, node);
+                        matches++;
+                        reportData.push(`<div class="report-item" style="color:green">✅ Acerto: ${node.dataset.pair} conectado com sucesso!</div>`);
+                    } else {
+                        errors++;
+                        reportData.push(`<div class="report-item" style="color:red">❌ Erro: Tentou ligar ${selectedNode.innerText} com ${node.innerText}.</div>`);
+                    }
+                    
+                    if (matches === totalPairs) finishGame();
+                }
+                
+                selectedNode.classList.remove('selected');
+                selectedNode = null;
+            }
+        });
+    });
+
+    function drawLine(n1, n2) {
+        const r1 = n1.getBoundingClientRect();
+        const r2 = n2.getBoundingClientRect();
+        const area = matchArea.getBoundingClientRect();
+        ctx.beginPath();
+        ctx.moveTo((r1.left + r1.right)/2 - area.left, (r1.top + r1.bottom)/2 - area.top);
+        ctx.lineTo((r2.left + r2.right)/2 - area.left, (r2.top + r2.bottom)/2 - area.top);
+        ctx.strokeStyle = "#27ae60";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+    }
+
+    function finishGame() {
+        const overlay = document.getElementById('modalOverlay');
+        const modal = document.getElementById('resultModal');
+        const scoreDisplay = document.getElementById('finalScore');
+        const reportBox = document.getElementById('reportContent');
+
+        // Cálculo da nota de 0 a 10
+        // A nota cai proporcionalmente aos erros cometidos
+        let nota = Math.max(0, 10 - (errors * 1.5));
+        if (nota < 0) nota = 0;
+
+        scoreDisplay.innerText = `Nota: ${nota.toFixed(1)}`;
+        reportBox.innerHTML = reportData.join('');
+        
+        overlay.style.display = 'flex';
+        setTimeout(() => modal.classList.add('show'), 10);
+    }
+</script>
+
+</body>
+</html>
